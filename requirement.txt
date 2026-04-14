@@ -1,0 +1,12 @@
+streamlit
+selenium
+webdriver-manager
+beautifulsoup4
+lxml
+python-dotenv
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+chromadb
+sentence-transformers
+requests
