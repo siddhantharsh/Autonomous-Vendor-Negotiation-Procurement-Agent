@@ -1,10 +1,10 @@
-# Autonomous Procurement Agent 🤖💼
+# Autonomous Procurement Agent
 
 An end-to-end, autonomous procurement and vendor negotiation AI. This system scrapes real-world supplier data, stores it in a semantic database, evaluates vendors, sends initial Requests for Quotation (RFQs), reads incoming email replies, and negotiates autonomously using a local LLM until a deal is reached.
 
 ---
 
-## 🏗️ Detailed Architecture & Phases
+## Detailed Architecture & Phases
 
 The system is built sequentially across 5 distinct phases that form a complete Autonomous Agent pipeline.
 
@@ -27,8 +27,8 @@ The Agent needs to talk to the real world. We use Python's built-in `smtplib` an
 
 ### Phase 4: State Machine & Database Manager
 Negotiations take time. The Agent uses a local **SQLite** database (`negotiations.db`) to track state persistently.
-- **States:** `AWAITING_REPLY` ➡️ `NEGOTIATING` ➡️ `ACCEPTED` or `REJECTED`.
-- The DB stores a continuous JSON-serialized chat history between the 🤖 Agent and the 👤 Vendor.
+- **States:** `AWAITING_REPLY` -> `NEGOTIATING` -> `ACCEPTED` or `REJECTED`.
+- The DB stores a continuous JSON-serialized chat history between the Agent and the Vendor.
 - If the system shuts down or restarts, it reads the DB and perfectly picks up where it left off.
 
 ### Phase 5: LLM Orchestration & Prompt Hardening
@@ -38,7 +38,7 @@ The core brain. We use an offline **Ollama** LLM (Llama 3 / Qwen) to evaluate ve
 
 ---
 
-## ⚙️ Logic Flow (How the Agent Works)
+## Logic Flow (How the Agent Works)
 
 1. **User Request:** You open the Streamlit UI, navigate to the **Agent Control Center**, and type *"I want Plastic Pipes for ₹ 50"*.
 2. **Search:** The RAG system searches ChromaDB, finding the best vendor matching the criteria.
@@ -51,7 +51,7 @@ The core brain. We use an offline **Ollama** LLM (Llama 3 / Qwen) to evaluate ve
 
 ---
 
-## 🧪 Testing Suite (129+ Tests)
+## Testing Suite (129+ Tests)
 
 The system is rigorously hardened via `pytest`. We utilize massive parameterized bulk testing to throw chaos at the agent:
 - **`test_massive_edge_cases.py`:** 41 tests verifying prompt injection defenses, max round cutoffs, and SQLite thread safety.
@@ -60,7 +60,7 @@ The system is rigorously hardened via `pytest`. We utilize massive parameterized
 
 ---
 
-## 🚀 Deployment Guide (100% Free)
+## Deployment Guide (100% Free)
 
 This project is designed to run entirely on free, open-source technology.
 
@@ -86,7 +86,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 .
