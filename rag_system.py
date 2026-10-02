@@ -8,11 +8,14 @@ import hashlib
 import requests
 import chromadb
 from chromadb.utils import embedding_functions
+from dotenv import load_dotenv
+
+load_dotenv()
 
 CHROMA_DB_PATH = "chroma_db"
 COLLECTION_NAME = "procurement_products"
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "qwen3:0.5b"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.5b")
 
 
 def get_chroma_collection():
@@ -30,6 +33,32 @@ def get_chroma_collection():
 
 def build_product_text(product):
     parts = []
+    
+    if "supplier" in product and isinstance(product["supplier"], dict):
+        name = product.get("name", "")
+        if name: parts.append(f"Product: {name}")
+        price = product.get("price", "")
+        if price and price not in ["Price not found", "Not found"]: parts.append(f"Price: {price}")
+        supplier = product["supplier"].get("name", "")
+        if supplier and supplier != "Not found": parts.append(f"Supplier: {supplier}")
+        location = product["supplier"].get("location", "")
+        if location and location != "Not found": parts.append(f"Location: {location}")
+        category = product.get("category", "")
+        if category: parts.append(f"Category: {category}")
+        
+        specs = product.get("specifications", {})
+        if specs and isinstance(specs, dict):
+            spec_lines = [f"{k}: {v}" for k, v in list(specs.items())[:8] if k and v]
+            if spec_lines: parts.append("Specifications: " + "; ".join(spec_lines))
+            
+        rating = product["supplier"].get("rating", "")
+        if rating and rating != "Not found": parts.append(f"Rating: {rating}")
+        trust = product["supplier"].get("trust_score", "")
+        if trust and trust not in ["Not verified", "Not found"]: parts.append(f"Trust Score: {trust}")
+        email = product["supplier"].get("email", "")
+        if email: parts.append(f"Email: {email}")
+        return ". ".join(parts)
+
     name = product.get("product_name", "")
     if name:
         parts.append(f"Product: {name}")
@@ -80,7 +109,9 @@ def extract_filters_from_query(query_text):
             filters["max_price"] = int(match.group(1))
             break
     location_match = re.search(
-        r"(?:from|in|at|near)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", query_text
+        r"(?:from|in|at|near)\s+(?!the\b|a\b|an\b|my\b|our\b|any\b|all\b|some\b)([A-Za-z]+(?:\s+(?!under\b|below\b|less\b|max\b|for\b)[A-Za-z]+)?)",
+        query_text,
+        re.IGNORECASE
     )
     if location_match:
         filters["location"] = location_match.group(1).strip()
@@ -151,7 +182,7 @@ def build_database_from_zip(zip_path, progress_callback=None):
                     product = json.load(f)
 
                 doc_id = hashlib.md5(
-                    product.get("URL", filename).encode()
+                    product.get("URL", product.get("url", filename)).encode()
                 ).hexdigest()
 
                 existing = collection.get(ids=[doc_id])
@@ -162,17 +193,30 @@ def build_database_from_zip(zip_path, progress_callback=None):
                     continue
 
                 text = build_product_text(product)
-                metadata = {
-                    "product_name": str(product.get("product_name", ""))[:500],
-                    "price": str(product.get("price", ""))[:100],
-                    "price_unit": str(product.get("price_unit", ""))[:100],
-                    "supplier_name": str(product.get("supplier_name", ""))[:200],
-                    "supplier_location": str(product.get("supplier_location", ""))[:200],
-                    "category": str(product.get("category", ""))[:200],
-                    "supplier_rating": str(product.get("supplier_rating", ""))[:200],
-                    "trustseal_verified": str(product.get("trustseal_verified", ""))[:100],
-                    "url": str(product.get("URL", ""))[:500],
-                }
+                if "supplier" in product and isinstance(product["supplier"], dict):
+                    metadata = {
+                        "source_platform": str(product.get("source_platform", "Unknown"))[:100],
+                        "product_name": str(product.get("name", ""))[:500],
+                        "price": str(product.get("price", ""))[:100],
+                        "supplier_name": str(product["supplier"].get("name", ""))[:200],
+                        "supplier_location": str(product["supplier"].get("location", ""))[:200],
+                        "category": str(product.get("category", ""))[:200],
+                        "supplier_rating": str(product["supplier"].get("rating", ""))[:200],
+                        "url": str(product.get("url", ""))[:500],
+                        "email": str(product["supplier"].get("email", ""))[:200],
+                    }
+                else:
+                    metadata = {
+                        "product_name": str(product.get("product_name", ""))[:500],
+                        "price": str(product.get("price", ""))[:100],
+                        "price_unit": str(product.get("price_unit", ""))[:100],
+                        "supplier_name": str(product.get("supplier_name", ""))[:200],
+                        "supplier_location": str(product.get("supplier_location", ""))[:200],
+                        "category": str(product.get("category", ""))[:200],
+                        "supplier_rating": str(product.get("supplier_rating", ""))[:200],
+                        "trustseal_verified": str(product.get("trustseal_verified", ""))[:100],
+                        "url": str(product.get("URL", ""))[:500],
+                    }
                 collection.add(ids=[doc_id], documents=[text], metadatas=[metadata])
                 products_indexed += 1
                 if progress_callback:
@@ -222,7 +266,7 @@ def query_products(query_text, n_results=5):
         formatted_results.append(
             {
                 "rank": i + 1,
-                "similarity": round(1 - distance, 3),
+                "similarity": round(max(0.0, min(1.0, 1 - distance)), 3),
                 "document": doc,
                 "metadata": metadata,
             }

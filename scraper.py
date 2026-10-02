@@ -1,3 +1,6 @@
+# Note: IndiaMART's markup is unstable and selectors may need periodic maintenance.
+# Please respect rate limits and IndiaMART's Terms of Service/robots.txt when scraping.
+
 import random
 import tempfile
 import shutil
@@ -16,6 +19,7 @@ from selenium.webdriver.common.by import By
 from urllib.parse import urljoin, urlparse
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
+from scrapers.factory import ScraperFactory
 
 try:
     from gdrive_utils import (
@@ -66,9 +70,13 @@ def generate_content_hash(data):
 
 
 def create_unique_filename(product_data):
-    product_name = sanitize_filename(product_data.get("product_name", "unknown"))
-    supplier_name = sanitize_filename(product_data.get("supplier_name", "unknown"))
-    url_hash = hashlib.md5(product_data.get("URL", "").encode()).hexdigest()[:6]
+    product_name = sanitize_filename(product_data.get("name", product_data.get("product_name", "unknown")))
+    if "supplier" in product_data and isinstance(product_data["supplier"], dict):
+        supplier_name = sanitize_filename(product_data["supplier"].get("name", "unknown"))
+    else:
+        supplier_name = sanitize_filename(product_data.get("supplier_name", "unknown"))
+    url = product_data.get("url", product_data.get("URL", ""))
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:6]
     return f"{product_name}_{supplier_name}_{url_hash}.json"
 
 
@@ -139,136 +147,13 @@ def extract_category_from_url(url):
 
 
 def extract_product_details(product_url, driver):
-    product_data = {
-        "URL": product_url,
-        "product_name": "",
-        "price": "",
-        "price_unit": "",
-        "supplier_name": "",
-        "supplier_location": "",
-        "gst_number": "",
-        "gst_registration_date": "",
-        "supplier_rating": "",
-        "response_rate": "",
-        "trustseal_verified": "",
-        "member_since": "",
-        "years_experience": "",
-        "legal_status": "",
-        "annual_turnover": "",
-        "specifications": {},
-        "last_updated": time.strftime("%Y-%m-%d"),
-        "category": extract_category_from_url(product_url),
-    }
-
-    product_name = safe_element_text(
-        driver, By.XPATH, "//h1[@class='bo center-heading centerHeadHeight ']"
-    )
-    if not product_name:
-        product_name = safe_element_text(driver, By.XPATH, "//h1")
-    product_data["product_name"] = product_name if product_name else "Product name not found"
-
+    scraper = ScraperFactory.get_scraper("indiamart", driver)
     try:
-        price_element = driver.find_element(By.XPATH, "//span[@class='bo price-unit']")
-        price_text = price_element.text.strip()
-        price_match = re.search(r"₹\s*([\d,]+(?:\.\d+)?)", price_text)
-        if price_match:
-            product_data["price"] = price_match.group(1).replace(",", "")
-        try:
-            unit_element = driver.find_element(By.XPATH, "//span[@class='units pcl76']")
-            unit_text = unit_element.text.strip()
-            product_data["price_unit"] = f"Per {unit_text}" if unit_text else "Per Unit"
-        except Exception:
-            product_data["price_unit"] = "Per Unit"
-    except Exception:
-        product_data["price"] = "Not found"
-        product_data["price_unit"] = "N/A"
-
-    try:
-        table = driver.find_element(By.XPATH, "//table//tbody")
-        rows = table.find_elements(By.TAG_NAME, "tr")
-        specifications = {}
-        for row in rows:
-            try:
-                cells = row.find_elements(By.TAG_NAME, "td")
-                if len(cells) >= 2:
-                    key = cells[0].text.strip()
-                    value = cells[1].text.strip()
-                    if key and value:
-                        specifications[key] = value
-            except Exception:
-                continue
-        product_data["specifications"] = specifications
-    except Exception:
-        product_data["specifications"] = {}
-
-    supplier_name = safe_element_text(
-        driver,
-        By.XPATH,
-        "//div[@class='pdflx1 pdBw asc']//h2[@class='fs15']",
-    )
-    product_data["supplier_name"] = supplier_name if supplier_name else "Not found"
-
-    location = safe_element_text(driver, By.XPATH, "//span[@class='city-highlight']")
-    product_data["supplier_location"] = location if location else "Not found"
-
-    try:
-        gst_element = driver.find_element(By.XPATH, "//span[@class='fs11 color1']")
-        gst_text = gst_element.text.strip()
-        product_data["gst_number"] = gst_text if gst_text and len(gst_text) == 15 else "Not found"
-    except Exception:
-        product_data["gst_number"] = "Not found"
-
-    trustseal = safe_element_text(
-        driver, By.XPATH, "//span[@class='lh11'][contains(text(), 'TrustSEAL')]"
-    )
-    product_data["trustseal_verified"] = trustseal if trustseal else "Not verified"
-
-    years = safe_element_text(
-        driver, By.XPATH, "//span[@class='fs11'][contains(text(), 'yrs')]"
-    )
-    product_data["years_experience"] = years if years else "Not found"
-
-    try:
-        rating = driver.find_element(By.XPATH, "//span[@class='bo color']").text.strip()
-        review_count = driver.find_element(By.XPATH, "//span[@class='tcund']").text.strip()
-        product_data["supplier_rating"] = f"{rating} ({review_count} reviews)"
-    except Exception:
-        product_data["supplier_rating"] = "Not found"
-
-    response_rate = safe_element_text(
-        driver,
-        By.XPATH,
-        "//span[@class='lh11 fs11 on color1'][contains(text(), 'Response Rate')]",
-    )
-    product_data["response_rate"] = response_rate if response_rate else "Not found"
-
-    legal_status = safe_element_text(
-        driver, By.XPATH, "//h4[@class='cmpfvalh4 fs13 bo mt5'][1]"
-    )
-    product_data["legal_status"] = legal_status if legal_status else "Not found"
-
-    gst_date = safe_element_text(
-        driver,
-        By.XPATH,
-        "//li[@id='Template3_compfactsheet_1']//h4[@class='cmpfvalh4 fs13 bo mt5']",
-    )
-    product_data["gst_registration_date"] = gst_date if gst_date else "Not found"
-
-    turnover = safe_element_text(
-        driver,
-        By.XPATH,
-        "//li[@id='Template3_compfactsheet_2']//h4[@class='cmpfvalh4 fs13 bo mt5']",
-    )
-    product_data["annual_turnover"] = turnover if turnover else "Not found"
-
-    member_since = safe_element_text(
-        driver,
-        By.XPATH,
-        "//li[@id='Template3_compfactsheet_3']//h4[@class='cmpfvalh4 fs13 bo mt5']",
-    )
-    product_data["member_since"] = member_since if member_since else "Not found"
-
-    return product_data
+        product_model = scraper.scrape(product_url)
+        return product_model.model_dump()
+    except Exception as e:
+        print(f"Extraction failed: {e}")
+        return {"name": "Extraction failed", "url": product_url}
 
 
 def collect_product_urls(soup, base_url, limit=10):
@@ -360,12 +245,14 @@ def scrape_category_and_products(category_url, products_per_category=10, headles
 
                 product_data = extract_product_details(product_url, driver)
 
-                if product_data["product_name"] not in ["Product name not found", "Extraction failed"]:
+                # The name key might be 'name' or 'product_name' depending on fallback
+                name_val = product_data.get("name", product_data.get("product_name", ""))
+                if name_val not in ["Product name not found", "Extraction failed", ""]:
                     json_filepath = save_product_as_json(product_data, temp_dir)
                     if json_filepath:
                         saved_json_files.append(json_filepath)
                         scraped_data.append(product_data)
-                        print(f"  Saved: {product_data['product_name'][:50]}")
+                        print(f"  Saved: {name_val[:50]}")
                     else:
                         print("  Skipped (duplicate)")
                 else:

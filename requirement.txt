@@ -1,5 +1,5 @@
 streamlit
-selenium
+selenium>=4.0,<5.0
 webdriver-manager
 beautifulsoup4
 lxml
@@ -7,6 +7,7 @@ python-dotenv
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-chromadb
-sentence-transformers
+chromadb>=0.5,<0.6
+sentence-transformers>=2.0,<3.0
 requests
+pytest

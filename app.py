@@ -250,7 +250,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_scraper, tab_query = st.tabs(["🕷️  Data Scraper", "🧠  Query Engine"])
+tab_scraper, tab_query, tab_agent = st.tabs(["🕷️  Data Scraper", "🧠  Query Engine", "💼  Negotiation Agent"])
 
 
 with tab_scraper:
@@ -271,6 +271,7 @@ with tab_scraper:
             value=5,
             help="Number of products to scrape",
         )
+        st.caption("Results may be fewer if the category page has limited listings on the first page.")
 
     col_btn, col_hint = st.columns([1, 3])
     with col_btn:
@@ -294,6 +295,10 @@ with tab_scraper:
             log_placeholder = st.empty()
             log_lines = []
 
+            terminal_output = ""
+            
+            # Note: capturing global sys.stdout is not safe under concurrent Streamlit sessions. 
+            # Revisit if multi-user support is ever needed.
             old_stdout = sys.stdout
             sys.stdout = captured = io.StringIO()
 
@@ -372,7 +377,7 @@ with tab_scraper:
                                 st.json(product)
                             st.markdown("---")
 
-            if "terminal_output" in dir() and terminal_output:
+            if terminal_output:
                 with st.expander("🖥️ Scraper Log", expanded=False):
                     st.code(terminal_output, language=None)
 
@@ -669,3 +674,105 @@ with tab_query:
             "📭 The vector database is empty. Upload a scraped ZIP file above to build it, "
             "then you can query the product data here."
         )
+
+with tab_agent:
+    st.markdown('<div class="section-label">Agent Control Center</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown("""
+        <div class="card">
+            <h4>🚀 Launch Campaign</h4>
+            <p style="font-size: 0.85rem; color: #8b949e;">Search the database and autonomously email top suppliers.</p>
+        """, unsafe_allow_html=True)
+        
+        agent_query = st.text_input("Find product to procure", placeholder="e.g. Stainless Steel Pipe")
+        target_price = st.text_input("Your Target Price", placeholder="e.g. Rs 500")
+        
+        if st.button("Start Negotiation", type="primary", use_container_width=True):
+            if not agent_query or not target_price:
+                st.warning("Please provide both a product query and a target price.")
+            else:
+                with st.spinner("Finding vendors and drafting RFQs..."):
+                    from agent.negotiator import ProcurementAgent
+                    try:
+                        agent = ProcurementAgent()
+                        result = agent.start_negotiation(agent_query, target_price)
+                        st.success(result)
+                    except Exception as e:
+                        st.error(f"Agent Error: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    with col2:
+        st.markdown("""
+        <div class="card">
+            <h4>📥 Inbox Processor</h4>
+            <p style="font-size: 0.85rem; color: #8b949e;">Check your email inbox for vendor replies and let the LLM counter-offer automatically.</p>
+        """, unsafe_allow_html=True)
+        
+        if st.button("Check Inbox & Auto-Negotiate", use_container_width=True):
+            with st.spinner("Logging into email and consulting LLM..."):
+                from agent.negotiator import ProcurementAgent
+                try:
+                    agent = ProcurementAgent()
+                    result = agent.process_inbox()
+                    st.success(result)
+                except Exception as e:
+                    st.error(f"Agent Error: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">Active & Concluded Negotiations</div>', unsafe_allow_html=True)
+    
+    if st.button("🔄 Refresh Database", key="refresh_db"):
+        pass # Streamlit reruns on button click automatically
+        
+    try:
+        from database.db_manager import NegotiationDB
+        import sqlite3
+        import json
+        db = NegotiationDB()
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, vendor_email, product_name, target_price, current_offer, status, history, last_updated FROM negotiations ORDER BY last_updated DESC")
+            rows = cursor.fetchall()
+            
+        if not rows:
+            st.info("No active negotiations found in the database.")
+        else:
+            for row in rows:
+                neg_id, email, prod, target, current, status, history_json, updated = row
+                
+                # Determine badge color based on status
+                badge_class = "badge-warning"
+                if status == "ACCEPTED":
+                    badge_class = "badge-success"
+                elif status == "REJECTED":
+                    badge_class = "badge-error"
+                    
+                st.markdown(f"""
+                <div class="product-card">
+                    <div style="display:flex; justify-content:space-between;">
+                        <h4>{prod}</h4>
+                        <span class="status-badge {badge_class}">{status}</span>
+                    </div>
+                    <div class="product-meta">
+                        <span class="meta-chip">📧 {email}</span>
+                        <span class="meta-chip">🎯 Target: {target}</span>
+                        <span class="meta-chip">🤝 Current Offer: {current}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                with st.expander("View Chat History"):
+                    try:
+                        history = json.loads(history_json)
+                        for msg in history:
+                            role = "🤖 Agent" if msg["role"] == "assistant" else ("👤 Vendor" if msg["role"] == "user" else msg["role"])
+                            st.markdown(f"**{role}** ({msg.get('timestamp', '')[:16]}):")
+                            st.caption(f"> {msg['content']}")
+                    except Exception:
+                        st.caption("No history available.")
+    except Exception as e:
+        st.error(f"Could not load database: {e}")
